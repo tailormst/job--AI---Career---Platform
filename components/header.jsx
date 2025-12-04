@@ -29,9 +29,9 @@ const Header = async () => {
                     <Image
                         src={"/logo.png"}
                         alt="jobAi Logo"
-                        width={200}
-                        height={60}
-                        className="h-12 py-1 w-auto object-contain"
+                        width={300}
+                        height={100}
+                        className="h-20 w-auto object-contain"
                     />
                 </Link>
 

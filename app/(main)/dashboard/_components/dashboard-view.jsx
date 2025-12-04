@@ -28,13 +28,27 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 
+// Helper function to format large INR values into Lakhs (L)
+const formatINRToLakhs = (value) => {
+    if (value === null || value === undefined) return 'N/A';
+    // Check if the value is large enough to be displayed in Lakhs (>= 1,00,000)
+    if (value >= 100000) {
+        // Divide by 100,000 to get value in Lakhs
+        const inLakhs = (value / 100000).toFixed(1); 
+        return `₹${inLakhs}L`; // e.g., ₹12.0L
+    }
+    // Fallback for smaller amounts, formatted with Indian locale
+    return `₹${value.toLocaleString('en-IN')}`; 
+};
+
+
 const DashboardView = ({ insights }) => {
-    // Transform salary data for the chart
+    // ⭐ CHANGE 1: Stop dividing by 1000. Backend now returns full INR values.
     const salaryData = insights.salaryRanges.map((range) => ({
         name: range.role,
-        min: range.min / 1000,
-        max: range.max / 1000,
-        median: range.median / 1000,
+        min: range.min,
+        max: range.max,
+        median: range.median,
     }));
 
     const getDemandLevelColor = (level) => {
@@ -55,6 +69,7 @@ const DashboardView = ({ insights }) => {
             case "positive":
                 return { icon: TrendingUp, color: "text-green-500" };
             case "neutral":
+            case "flat":
                 return { icon: LineChart, color: "text-yellow-500" };
             case "negative":
                 return { icon: TrendingDown, color: "text-red-500" };
@@ -147,8 +162,9 @@ const DashboardView = ({ insights }) => {
             <Card className="col-span-4">
                 <CardHeader>
                     <CardTitle>Salary Ranges by Role</CardTitle>
+                    {/* ⭐ CHANGE 2: Update Card Description */}
                     <CardDescription>
-                        Displaying minimum, median, and maximum salaries (in thousands)
+                        Displaying minimum, median, and maximum salaries (in ₹ Lakhs) per month
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -157,7 +173,8 @@ const DashboardView = ({ insights }) => {
                             <BarChart data={salaryData}>
                                 <CartesianGrid strokeDasharray="3 3" />
                                 <XAxis dataKey="name" />
-                                <YAxis />
+                                {/* ⭐ CHANGE 3: Format YAxis ticks to show Lakhs */}
+                                <YAxis tickFormatter={formatINRToLakhs} /> 
                                 <Tooltip
                                     content={({ active, payload, label }) => {
                                         if (active && payload && payload.length) {
@@ -166,7 +183,8 @@ const DashboardView = ({ insights }) => {
                                                     <p className="font-medium">{label}</p>
                                                     {payload.map((item) => (
                                                         <p key={item.name} className="text-sm">
-                                                            {item.name}: ${item.value}K
+                                                            {/* ⭐ CHANGE 4: Format tooltip values */}
+                                                            {item.name}: {formatINRToLakhs(item.value)}
                                                         </p>
                                                     ))}
                                                 </div>
@@ -175,9 +193,10 @@ const DashboardView = ({ insights }) => {
                                         return null;
                                     }}
                                 />
-                                <Bar dataKey="min" fill="#94a3b8" name="Min Salary (K)" />
-                                <Bar dataKey="median" fill="#64748b" name="Median Salary (K)" />
-                                <Bar dataKey="max" fill="#475569" name="Max Salary (K)" />
+                                {/* ⭐ CHANGE 5: Update Bar names */}
+                                <Bar dataKey="min" fill="#94a3b8" name="Min Salary (₹)" />
+                                <Bar dataKey="median" fill="#64748b" name="Median Salary (₹)" />
+                                <Bar dataKey="max" fill="#475569" name="Max Salary (₹)" />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>

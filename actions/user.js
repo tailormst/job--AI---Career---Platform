@@ -5,93 +5,104 @@ import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 import { generateAIInsights } from "./dashboard";
 
-export async function updateUser(data) {
-    const { userId } = await auth();
-    if (!userId) throw new Error("Unauthorized");
-
-    const user = await db.user.findUnique({
-        where: { clerkUserId: userId },
+// ⭐ Helper: Ensure user exists
+async function getOrCreateUser(clerkUserId, email = null, name = null) {
+    let user = await db.user.findUnique({
+        where: { clerkUserId },
     });
 
-    if (!user) throw new Error("User not found");
+    if (!user) {
+        user = await db.user.create({
+            data: {
+                clerkUserId,
+                email: email || "",
+                name: name || "",
+                industry: null,
+                skills: [],
+            },
+        });
+    }
+
+    return user;
+}
+
+// ⭐ Update User
+export async function updateUser(data) {
+    const { userId, sessionClaims } = await auth();
+    if (!userId) throw new Error("Unauthorized");
+
+    // Clerk info
+    const email = sessionClaims?.email || "";
+    const name = sessionClaims?.name || "";
+
+    // Ensure user exists
+    const user = await getOrCreateUser(userId, email, name);
+
+    // ⭐ FIX: Move slow AI generation OUTSIDE the Prisma Transaction
+    let insightDataToCreate = null;
+    let existingInsight = await db.industryInsight.findUnique({
+        where: { industry: data.industry },
+    });
+
+    if (!existingInsight) {
+        // This is the SLOW operation (takes > 5s).
+        // It MUST be done before the transaction starts.
+        const insights = await generateAIInsights(data.industry);
+
+        insightDataToCreate = {
+            industry: data.industry,
+            ...insights,
+            nextUpdate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        };
+    }
 
     try {
-        // Start a transaction to handle both operations
-        const result = await db.$transaction(
-            async (tx) => {
-                // First check if industry exists
-                let industryInsight = await tx.industryInsight.findUnique({
-                    where: {
-                        industry: data.industry,
-                    },
+        const result = await db.$transaction(async (tx) => {
+            let industryInsight;
+            
+            // 1. If insights were generated above, create the record inside the transaction
+            if (insightDataToCreate) {
+                industryInsight = await tx.industryInsight.create({
+                    data: insightDataToCreate,
                 });
-
-                // If industry doesn't exist, create it with default values
-                if (!industryInsight) {
-                    const insights = await generateAIInsights(data.industry);
-                    
-                    industryInsight = await db.industryInsight.create({
-                        data: {
-                            industry: data.industry,
-                            ...insights,
-                            nextUpdate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-                        },
-                    });
-                }
-
-                // Now update the user
-                const updatedUser = await tx.user.update({
-                    where: {
-                        id: user.id,
-                    },
-                    data: {
-                        industry: data.industry,
-                        experience: data.experience,
-                        bio: data.bio,
-                        skills: data.skills,
-                    },
-                });
-
-                return { updatedUser, industryInsight };
-            },
-            {
-                timeout: 10000, // default: 5000
+            } else {
+                // Otherwise, use the pre-fetched existing one
+                industryInsight = existingInsight;
             }
-        );
+
+            // 2. Update user (This is a fast operation)
+            const updatedUser = await tx.user.update({
+                where: { id: user.id },
+                data: {
+                    industry: data.industry,
+                    experience: data.experience,
+                    bio: data.bio,
+                    skills: data.skills,
+                },
+            });
+
+            return { updatedUser, industryInsight };
+        });
 
         revalidatePath("/");
-        return {success: true, ...result};
+        return { success: true, ...result };
     } catch (error) {
-        console.error("Error updating user and industry:", error.message);
+        console.error("❌ Error updating user:", error);
         throw new Error("Failed to update profile");
     }
 }
 
+// ⭐ Onboarding Status
 export async function getUserOnboardingStatus() {
-    const { userId } = await auth();
+    const { userId, sessionClaims } = await auth();
     if (!userId) throw new Error("Unauthorized");
 
-    const user = await db.user.findUnique({
-        where: { clerkUserId: userId },
-    });
+    // Ensure user exists
+    const email = sessionClaims?.email || "";
+    const name = sessionClaims?.name || "";
+    const user = await getOrCreateUser(userId, email, name);
 
-    if (!user) throw new Error("User not found");
-
-    try {
-        const user = await db.user.findUnique({
-            where: {
-                clerkUserId: userId,
-            },
-            select: {
-                industry: true,
-            },
-        });
-
-        return {
-            isOnboarded: !!user?.industry,
-        };
-    } catch (error) {
-        console.error("Error checking onboarding status:", error);
-        throw new Error("Failed to check onboarding status");
-    }
+    return {
+        isOnboarded: !!user.industry,
+    };
 }
