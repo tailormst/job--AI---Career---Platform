@@ -46,9 +46,10 @@ const HeroSection = () => {
                             Get Started
                         </Button>
                     </Link>
-                    <Link href="/">
+                    {/* Updated button text and link */}
+                    <Link href="https://unstop.com/about/unstop-careers" target="_blank">
                         <Button size="lg" variant="outline" className="px-8">
-                            Watch Demo
+                            Check Jobs on Unstop
                         </Button>
                     </Link>
                 </div>
